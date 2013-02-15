@@ -9,8 +9,10 @@ namespace Rhino.Queues.Tests.FromUsers
 	using System.Transactions;
 	using Model;
 	using Protocol;
-	using Xunit;
+    //using Xunit;
+    using NUnit.Framework;
 
+    [TestFixture]
 	public class FromRene : WithDebugging, IDisposable
 	{
 		readonly QueueManager receiver;
@@ -83,7 +85,7 @@ namespace Rhino.Queues.Tests.FromUsers
 			}
 		}
 
-		[Fact]
+		[Test]
 		public void ShouldOnlyGetTwoItems()
 		{
 			ThreadPool.QueueUserWorkItem(Receiver);
@@ -105,9 +107,9 @@ namespace Rhino.Queues.Tests.FromUsers
 			receiver.Dispose();
 			keepRunning = false;
 
-			Assert.Equal(2, msgs.Count);
-			Assert.Equal("Message 4", msgs[0]);
-			Assert.Equal("Message 5", msgs[1]);
+			Assert.AreEqual(2, msgs.Count);
+            Assert.AreEqual("Message 4", msgs[0]);
+            Assert.AreEqual("Message 5", msgs[1]);
 		}
 
 		public void Dispose()

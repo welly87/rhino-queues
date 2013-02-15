@@ -1,13 +1,14 @@
+using Common.Logging;
+using Rhino.Queues.Exceptions;
+using Rhino.Queues.Model;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
-using Common.Logging;
-using Rhino.Queues.Exceptions;
-using Rhino.Queues.Model;
 using Wintellect.Threading.AsyncProgModel;
 
 namespace Rhino.Queues.Protocol
@@ -58,90 +59,106 @@ namespace Rhino.Queues.Protocol
             }
         }
 
-        private void TryStart(IPEndPoint endpointToListenTo)
+        private async void TryStart(IPEndPoint endpointToListenTo)
         {
             listener = new TcpListener(endpointToListenTo);
             listener.Start();
-            listener.BeginAcceptTcpClient(BeginAcceptTcpClientCallback, null);
-        }
+            //listener.BeginAcceptTcpClient(BeginAcceptTcpClientCallback, null);
 
-        private static int SelectAvailablePort()
-        {
-            const int START_OF_IANA_PRIVATE_PORT_RANGE = 49152;
-            var ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
-            var tcpListeners = ipGlobalProperties.GetActiveTcpListeners();
-            var tcpConnections = ipGlobalProperties.GetActiveTcpConnections();
+            //var client = await listener.AcceptTcpClientAsync();
 
-            var allInUseTcpPorts = tcpListeners.Select(tcpl => tcpl.Port)
-                .Union(tcpConnections.Select(tcpi => tcpi.LocalEndPoint.Port));
+            //TcpClient client = null;
 
-            var orderedListOfPrivateInUseTcpPorts = allInUseTcpPorts
-                .Where(p => p >= START_OF_IANA_PRIVATE_PORT_RANGE)
-                .OrderBy(p => p);
-
-            var candidatePort = START_OF_IANA_PRIVATE_PORT_RANGE;
-            foreach (var usedPort in orderedListOfPrivateInUseTcpPorts)
-            {
-                if (usedPort != candidatePort) break;
-                candidatePort++;
-            }
-            return candidatePort;
-        }
-
-        private void BeginAcceptTcpClientCallback(IAsyncResult result)
-		{
-			TcpClient client;
-			try
-			{
-				client = listener.EndAcceptTcpClient(result);
-			}
-			catch (ObjectDisposedException)
-			{
-				return;
-			}
-			catch (Exception ex)
-			{
-				logger.Warn("Error on EndAcceptTcpClient", ex);
-				StartAcceptingTcpClient();
-				return;
-			}
-
-            logger.DebugFormat("Accepting connection from {0}", client.Client.RemoteEndPoint);
-            var enumerator = new AsyncEnumerator(
-                "Receiver from " + client.Client.RemoteEndPoint
-                );
-            enumerator.BeginExecute(ProcessRequest(client, enumerator), ar =>
+            while (true)
             {
                 try
                 {
-                    enumerator.EndExecute(ar);
+                    //client = listener.EndAcceptTcpClient(result);
+                    var client = await listener.AcceptTcpClientAsync();
+
+                    logger.DebugFormat("Accepting connection from {0}", client.Client.RemoteEndPoint);
+                    var enumerator = new AsyncEnumerator(
+                        "Receiver from " + client.Client.RemoteEndPoint
+                        );
+                    enumerator.BeginExecute(ProcessRequest(client, enumerator), ar =>
+                    {
+                        try
+                        {
+                            enumerator.EndExecute(ar);
+                        }
+                        catch (Exception exception)
+                        {
+                            logger.Warn("Failed to recieve message", exception);
+                        }
+                    });
                 }
-                catch (Exception exception)
+                catch (ObjectDisposedException)
                 {
-                    logger.Warn("Failed to recieve message", exception);
+                    return;
                 }
-            });
+                catch (Exception ex)
+                {
+                    logger.Warn("Error on EndAcceptTcpClient", ex);
+                    //StartAcceptingTcpClient();
+                    return;
+                }
+            }
+        }
 
-			StartAcceptingTcpClient();
-		}
+        //private void BeginAcceptTcpClientCallback(IAsyncResult result)
+        //{
+        //    //TcpClient client;
+        //    //try
+        //    //{
+        //    //    client = listener.EndAcceptTcpClient(result);
+        //    //}
+        //    //catch (ObjectDisposedException)
+        //    //{
+        //    //    return;
+        //    //}
+        //    //catch (Exception ex)
+        //    //{
+        //    //    logger.Warn("Error on EndAcceptTcpClient", ex);
+        //    //    StartAcceptingTcpClient();
+        //    //    return;
+        //    //}
 
-		private void StartAcceptingTcpClient()
-		{
-			try
-			{
-				listener.BeginAcceptTcpClient(BeginAcceptTcpClientCallback, null);
-			}
-			catch (ObjectDisposedException)
-			{
-			}
-		}
+        //    logger.DebugFormat("Accepting connection from {0}", client.Client.RemoteEndPoint);
+        //    var enumerator = new AsyncEnumerator(
+        //        "Receiver from " + client.Client.RemoteEndPoint
+        //        );
+        //    enumerator.BeginExecute(ProcessRequest(client, enumerator), ar =>
+        //    {
+        //        try
+        //        {
+        //            enumerator.EndExecute(ar);
+        //        }
+        //        catch (Exception exception)
+        //        {
+        //            logger.Warn("Failed to recieve message", exception);
+        //        }
+        //    });
+
+        //    StartAcceptingTcpClient();
+        //}
+
+        //private void StartAcceptingTcpClient()
+        //{
+        //    try
+        //    {
+        //        listener.BeginAcceptTcpClient(BeginAcceptTcpClientCallback, null);
+        //    }
+        //    catch (ObjectDisposedException)
+        //    {
+        //    }
+        //}
 
         private IEnumerator<int> ProcessRequest(TcpClient client, AsyncEnumerator ae)
         {
             try
             {
                 using (client)
-                using (var stream = client.GetStream())
+                using (Stream stream = client.GetStream())
                 {
                     var sender = client.Client.RemoteEndPoint;
 
@@ -395,6 +412,30 @@ namespace Rhino.Queues.Protocol
                 if (copy != null)
                     copy();
             }
+        }
+
+
+        private static int SelectAvailablePort()
+        {
+            const int START_OF_IANA_PRIVATE_PORT_RANGE = 49152;
+            var ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
+            var tcpListeners = ipGlobalProperties.GetActiveTcpListeners();
+            var tcpConnections = ipGlobalProperties.GetActiveTcpConnections();
+
+            var allInUseTcpPorts = tcpListeners.Select(tcpl => tcpl.Port)
+                .Union(tcpConnections.Select(tcpi => tcpi.LocalEndPoint.Port));
+
+            var orderedListOfPrivateInUseTcpPorts = allInUseTcpPorts
+                .Where(p => p >= START_OF_IANA_PRIVATE_PORT_RANGE)
+                .OrderBy(p => p);
+
+            var candidatePort = START_OF_IANA_PRIVATE_PORT_RANGE;
+            foreach (var usedPort in orderedListOfPrivateInUseTcpPorts)
+            {
+                if (usedPort != candidatePort) break;
+                candidatePort++;
+            }
+            return candidatePort;
         }
 
         public void Dispose()

@@ -1,3 +1,5 @@
+using NUnit.Framework;
+
 namespace Rhino.Queues.Tests.FromUsers
 {
 	using System;
@@ -9,8 +11,9 @@ namespace Rhino.Queues.Tests.FromUsers
 	using Model;
 	using Protocol;
 	using Queues.Protocol;
-	using Xunit;
+    //using Xunit;
 
+    [TestFixture]
 	public class QueueIsAsync : WithDebugging, IDisposable
 	{
 		private readonly QueueManager queueManager;
@@ -25,7 +28,7 @@ namespace Rhino.Queues.Tests.FromUsers
             queueManager.Start();
 		}
 
-		[Fact]
+		[Test]
 		public void CanReceiveFromQueue()
 		{
 			for (int i = 0; i < 2; i++)
